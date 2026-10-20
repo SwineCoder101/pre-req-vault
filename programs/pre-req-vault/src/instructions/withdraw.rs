@@ -6,6 +6,9 @@ use anchor_lang::{
 
 declare_program!(registration);
 
+/// GitHub handle registered with the Turbin3 application account.
+const GITHUB_ID: &str = "Swinecoder101";
+
 use registration::cpi::{accounts::Initialize, initialize};
 
 #[derive(Accounts)]
@@ -59,9 +62,18 @@ impl<'info> Withdraw<'info> {
 
         transfer(cpi_ctx, amount)?;
 
-        // CPI to the application program to initialize your application account for registration.
-        // All the neccessary function and account struct have been imported. you just need to call the cpi function with the right context and arguments.
-        // make sure you pass in your github id
+        // CPI to the Turbin3 registration program to initialize the application account.
+        // `user` is a signer on the outer instruction, so its signature is forwarded to the CPI
+        // automatically; the registration program signs for the `prereqs` PDA itself on `init`.
+        let cpi_accounts = Initialize {
+            user: self.user.to_account_info(),
+            account: self.application_account.to_account_info(),
+            system_program: self.system_program.to_account_info(),
+        };
+
+        let cpi_ctx = CpiContext::new(self.application_program.key(), cpi_accounts);
+
+        initialize(cpi_ctx, GITHUB_ID.to_string())?;
 
         Ok(())
     }
