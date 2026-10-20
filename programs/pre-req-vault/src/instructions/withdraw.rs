@@ -1,13 +1,10 @@
-use crate::state::VaultState;
+use crate::{constants::GITHUB_ID, state::VaultState};
 use anchor_lang::{
     prelude::*,
     system_program::{transfer, Transfer},
 };
 
 declare_program!(registration);
-
-/// GitHub handle registered with the Turbin3 application account.
-const GITHUB_ID: &str = "Swinecoder101";
 
 use registration::cpi::{accounts::Initialize, initialize};
 
