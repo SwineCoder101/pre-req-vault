@@ -44,14 +44,18 @@ flowchart LR
     cls -- "drains" --> vault
 ```
 
-| Account | Type | Derivation | Used by |
-|---|---|---|---|
-| `user` | Signer | wallet | all |
-| `vault_state` | PDA, `VaultState` data | `["state", user]` under vault program | all |
-| `vault` | PDA, system account, no data | `["vault", vault_state]` under vault program | all |
-| `application_account` | PDA, `ApplicationAccount` data | `["prereqs", user]` under Turbin3 program | withdraw |
-| `application_program` | Program | Turbin3 registration program | withdraw |
-| `system_program` | Program | `11111111111111111111111111111111` | all |
+| Account | Address | Owner | Data | Used by |
+|---|---|---|---|---|
+| `user` | wallet keypair | system program | none | all |
+| `vault_state` | PDA `["state", user]` under vault program | vault program | `VaultState` | all |
+| `vault` | PDA `["vault", vault_state]` under vault program | system program | none, holds SOL only | all |
+| `application_account` | PDA `["prereqs", user]` under Turbin3 program | Turbin3 program | `ApplicationAccount` | withdraw |
+| `application_program` | `TRBZ…` | BPF loader | Turbin3 program executable | withdraw |
+| `system_program` | `1111…` | native | n/a | all |
+
+`vault_state` and `vault` are both PDAs, but only `vault_state` is owned by the vault program
+and carries data. `vault` stays owned by the system program with no data; the program controls
+it purely by signing with its seeds, which is all a lamport transfer needs.
 
 ## Instructions
 
@@ -64,11 +68,12 @@ The flow is linear: `initialize` once, then any number of `deposit` / `withdraw`
   the user's GitHub handle (see below).
 - **`close`**: drains `vault` to `user` and closes `vault_state`, returning its rent.
 
-## Registration CPI
+## Instruction flows
 
-The CPI sits at the end of `withdraw`, after the SOL transfer. `user` is already a signer on
-the outer instruction, so no extra signing is needed; the Turbin3 program signs for its own
-`prereqs` PDA when it creates the account.
+Every instruction is a thin wrapper around a system program CPI. `withdraw` is the only one
+that also calls out to a second program. The Turbin3 CPI sits at the end of `withdraw`, after
+the SOL transfer. `user` is already a signer on the outer instruction, so no extra signing is
+needed; the Turbin3 program signs for its own `prereqs` PDA when it creates the account.
 
 ```mermaid
 sequenceDiagram
@@ -77,6 +82,16 @@ sequenceDiagram
     participant S as System program
     participant T as Turbin3 program
 
+    U->>V: initialize()
+    V->>S: create vault_state (init, payer = user)
+    S-->>V: ok
+    V-->>U: ok
+
+    U->>V: deposit(amount)
+    V->>S: transfer user -> vault (user signed)
+    S-->>V: ok
+    V-->>U: ok
+
     U->>V: withdraw(amount)
     V->>S: transfer vault -> user (PDA signed)
     S-->>V: ok
@@ -84,6 +99,12 @@ sequenceDiagram
     T->>S: create application_account (PDA signed by Turbin3)
     S-->>T: ok
     T-->>V: ok
+    V-->>U: ok
+
+    U->>V: close()
+    V->>S: transfer all lamports vault -> user (PDA signed)
+    S-->>V: ok
+    note over V: close vault_state (Anchor close constraint), rent -> user
     V-->>U: ok
 ```
 
